@@ -1,5 +1,17 @@
 import streamlit as st
 import requests
+import time
+
+def call_api_with_retry(url, payload, retries=3):
+    for i in range(retries):
+        try:
+            response = requests.post(url, json=payload, timeout=60)
+            return response
+        except requests.exceptions.RequestException:
+            if i < retries - 1:
+                time.sleep(3)
+            else:
+                raise
 import pandas as pd
 import numpy as np
 from typing import Optional
@@ -39,17 +51,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
-# CHANGE THIS TO YOUR RENDER API URL AFTER DEPLOYMENT
-# Local: http://localhost:8000
-# Render: https://housing-price-api.onrender.com
-API_URL = "http://localhost:8000"
 
-# ============================================================================
-# TITLE & INTRO
-# ============================================================================
+API_URL = "https://housing-price-api-nx54.onrender.com"
+
+
 st.title("Housing Price Prediction")
 st.markdown("---")
 
@@ -198,19 +203,22 @@ if prediction_type == "Single Prediction":
                 }
                 
                 # Call API
-                response = requests.post(
+                response = call_api_with_retry(
                     f"{API_URL}/predict",
-                    json=payload,
-                    timeout=30
+                    payload
                 )
                 
                 if response.status_code == 200:
-                    result = response.json()
+                    try:
+                        result = response.json()
+                    except:
+                        st.error(f"Invalid response from API:\n{response.text}")
+                        st.stop()
                     
                     # Display result
                     st.success("Prediction Complete!", icon="✅")
                     
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2 = st.columns(2)
                     
                     with col1:
                         st.metric(
@@ -219,14 +227,9 @@ if prediction_type == "Single Prediction":
                             delta=None
                         )
                     
-                    with col2:
-                        st.metric(
-                            "💰 In Lakhs (INR)",
-                            f"₹{result['price_in_lakhs']:.2f} L",
-                            delta=None
-                        )
                     
-                    with col3:
+                    
+                    with col2:
                         st.metric(
                             "📍 Location (Lat, Long)",
                             f"{latitude:.3f}°, {longitude:.3f}°",
@@ -348,14 +351,17 @@ elif prediction_type == "Batch Prediction":
                         requests_list = df.to_dict('records')
                         
                         # Call batch API
-                        response = requests.post(
+                        response = call_api_with_retry(
                             f"{API_URL}/predict-batch",
-                            json=requests_list,
-                            timeout=60
+                            requests_list
                         )
                         
                         if response.status_code == 200:
-                            result = response.json()
+                            try:
+                                result = response.json()
+                            except:
+                                st.error(f"Invalid response from API:\n{response.text}")
+                                st.stop()
                             
                             # Add predictions to dataframe
                             df['Predicted_Price_USD'] = result['predictions']
@@ -542,7 +548,11 @@ elif prediction_type == "API Status":
                         timeout=10
                     )
                     if response.status_code == 200:
-                        result = response.json()
+                        try:
+                            result = response.json()
+                        except:
+                            st.error(f"Invalid response from API:\n{response.text}")
+                            st.stop()
                         st.success(f"✅ API is healthy!", icon="✅")
                         st.json(result)
                     else:
